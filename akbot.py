@@ -1,4 +1,4 @@
-import logging
+import os
 import time
 import asyncio
 import pymongo
@@ -11,8 +11,8 @@ from loguru import logger
 # todo Сделать ограничение на время сделки, продавать через 30 минут после боковика.
 
 
-api_key = '7tmGEBOvx4sxDPiH3lON1cNBFKrr6Dj41nRssuAbpQXrbfax9BWSjvCniWb9krsG'
-api_secret = 'mTfx0ZF7z1DFk3bZSswrHjvsOKzkBghigRtVzTes0AdBVGjV7BPfB7EvEyaQez2P'
+api_key = os.getenv('API_KEY')
+api_secret = os.getenv('API_SECRET')
 min_order = 10
 max_trade_pair = 5
 debug = True
@@ -100,7 +100,7 @@ def save_whitelist(whitelist):
 
 def make_pair():
     """
-    Сделать список пар валюты к активам
+    Возвращает список пар валюты к активам
     :return:list список пар
     """
     whitelist = get_whitelist()
@@ -117,7 +117,7 @@ def make_pair():
 @logger.catch
 def get_orders(pair):
     """
-    Проверить есть ли в базе ордер о покупке по данной паре
+    Возвращает найденные  в базе сделки по данной паре
     :param pair: Название пары
     :return: True, False
     """
@@ -127,6 +127,12 @@ def get_orders(pair):
 
 @logger.catch
 def get_pair_data(data, pair):
+    """
+    Извлекает из общей кучи данные по заданной паре
+    :param data:
+    :param pair:
+    :return:
+    """
     for item in data:
         if pair == item["s"]:
             return item
@@ -134,6 +140,12 @@ def get_pair_data(data, pair):
 
 @logger.catch
 def get_price(data, pair):
+    """
+    Получаем цену заданной пары из набора данных
+    :param data:
+    :param pair:
+    :return:
+    """
     for item in data:
         if item['s'] == pair:
             #logger.info("result ={}", item)
@@ -141,11 +153,23 @@ def get_price(data, pair):
 
 
 async def get_btc_price(client):
+    """
+    Получаем цену биткоина к доллару.
+    :param client:
+    :return:
+    """
     btc = await client.get_ticker(symbol="BTCUSDT")
     logger.info("BTCUSDT ={}", btc)
     return float(btc["lastPrice"])
 
+
 def on_calculate(data, symbols):
+    """
+    Производим рассчеты перед процедурой торговли. Выводим статистику
+    :param data:
+    :param symbols:
+    :return:
+    """
     logger.info("on calculate start")
     for pair in symbols:
         item = get_pair_data(data, pair)
@@ -159,6 +183,11 @@ def on_calculate(data, symbols):
 
 
 def get_asset(pair):
+    """
+    Возвращаем базовый актив, BTC или USDT
+    :param pair:
+    :return:
+    """
     asset = pair[-3:]
     if asset == "BTC":
         return "BTC"
@@ -168,6 +197,14 @@ def get_asset(pair):
 
 @logger.catch
 async def buy_pair(database, client, pair, data):
+    """
+    Покупает валютную пару.
+    :param database:
+    :param client:
+    :param pair:
+    :param data:
+    :return:
+    """
     logger.info("{}", pair)
     asset = get_asset(pair)
     price = get_price(data, pair)
@@ -187,6 +224,13 @@ async def buy_pair(database, client, pair, data):
 
 @logger.catch
 def save_order(database, pair, data):
+    """
+    Сохраняет сделку в базе данных.
+    :param database:
+    :param pair:
+    :param data:
+    :return:
+    """
     # logger.info("start")
     price = get_price(data, pair)
     quantity = min_order / price
@@ -273,11 +317,19 @@ def trim_data(res):
     return dict_res
 
 
-
 def delete_pair_price(database, pair):
     database.prices.delete_one({'s': pair})
 
+
 async def on_trade(client, database, data, symbols):
+    """
+    Торговая функция для бизнес-логики. Занимается покупкой и продажей валютных пар в зависимости от условий.
+    :param client:
+    :param database:
+    :param data:
+    :param symbols:
+    :return:
+    """
     logger.info("on trade start")
     for pair in symbols:
         item = get_pair_data(data, pair)
@@ -310,7 +362,7 @@ async def on_trade(client, database, data, symbols):
                 if float(item["P"]) < daily_percent:
                     cur_price = float(item["c"])
                     min_price = get_min_price(db, item)
-                    if min_price == None:
+                    if min_price is None:
                         save_min_price(db, item)
                         min_price = cur_price
                     buy_percent = (cur_price - min_price) / cur_price * 100
@@ -327,6 +379,12 @@ async def on_trade(client, database, data, symbols):
 
 @logger.catch
 async def main(database, symbols):
+    """
+    Основная функция запускающая асинхронное выполнение заданий.
+    :param database:
+    :param symbols:
+    :return:
+    """
     client = await AsyncClient.create(api_key, api_secret)
     bm = BinanceSocketManager(client)
     # start any sockets here, i.e a trade socket
