@@ -1,8 +1,11 @@
 import os
 import time
 import asyncio
+from rich.live import Live
+from rich.table import Table
 import pymongo
 from binance import AsyncClient, BinanceSocketManager
+from binance.helpers import round_step_size
 from loguru import logger
 
 # todo Сделать статистику на экране приятной для восприятия.
@@ -13,9 +16,8 @@ from loguru import logger
 
 api_key = os.getenv('API_KEY')
 api_secret = os.getenv('API_SECRET')
-min_order = 10
+min_order = 11
 max_trade_pair = 5
-debug = True
 daily_percent = -1
 trailing_stop = True
 sell_up = 1.5
@@ -42,7 +44,7 @@ def get_assets():
     :return: Список базовых валют разделенных пробелом.
     """
     lst = ""
-    logger.info("Start get_assets()")
+    # logger.info("Start get_assets()")
     f = open('assets.txt', 'r')
     try:
         assets = f.read()
@@ -51,7 +53,7 @@ def get_assets():
         logger.exception("Can not reding tha file assets.txt")
     finally:
         f.close()
-    logger.info("Stop get_assets(). result = {}", lst)
+    # logger.info("Stop get_assets(). result = {}", lst)
     return lst
 
 
@@ -121,7 +123,7 @@ def get_orders(pair):
     :param pair: Название пары
     :return: True, False
     """
-    found_pair = db.orders.find_one({'s': pair, 'S': 'BUY'})
+    found_pair = db.orders.find_one({'pair': pair, 'status': 'BUY'})
     return found_pair
 
 
@@ -152,6 +154,7 @@ def get_price(data, pair):
             return float(item['c'])
 
 
+@logger.catch
 async def get_btc_price(client):
     """
     Получаем цену биткоина к доллару.
@@ -163,25 +166,51 @@ async def get_btc_price(client):
     return float(btc["lastPrice"])
 
 
-def on_calculate(data, symbols):
+@logger.catch
+async def get_binance_status(client):
+    btc = await client.get_ticker(symbol="BTCUSDT")
+
+
+@logger.catch
+async def on_calculate(client, data, symbols):
     """
     Производим рассчеты перед процедурой торговли. Выводим статистику
     :param data:
+    [
+   {
+      "E": 1648703288108,
+      "s": "ETHBTC",
+      "P": "1.127",
+      "c": "0.07225500"
+   },
+   {
+      "E": 1648703288126,
+      "s": "LTCBTC",
+      "P": "1.621",
+      "c": "0.00275900"
+   }]
+
     :param symbols:
+    [
+        '1INCHUSDT',
+        'AAVEUSDT',
+        'ADAUSDT'
+    ]
     :return:
     """
-    logger.info("on calculate start")
+    await get_binance_status(client)
     for pair in symbols:
         item = get_pair_data(data, pair)
         if item is not None:
             if get_orders(pair):
                 order_data = get_orders(pair)
                 price = get_price(data, pair)
-                cur_percent = (float(item["c"]) - float(order_data["c"])) / float(item["c"]) * 100
+                cur_percent = (float(item["c"]) - float(order_data["cur_price"])) / float(item["c"]) * 100
                 # logger.info("order_data ={}", order_data)
-                logger.info("{} Buy_price:{} Price:{} %:{}", order_data["s"], order_data["c"], price, tofixed(cur_percent, 2))
+                logger.info("{} Buy_price:{} Price:{} %:{}", order_data["pair"], order_data["buy_price"], price, tofixed(cur_percent, 2))
 
 
+@logger.catch
 def get_asset(pair):
     """
     Возвращаем базовый актив, BTC или USDT
@@ -208,43 +237,50 @@ async def buy_pair(database, client, pair, data):
     logger.info("{}", pair)
     asset = get_asset(pair)
     price = get_price(data, pair)
-    info = client.get_symbol_info(pair)
-    print()
+    info = await client.get_symbol_info(pair)
+    step_size = float(info['filters'][2]['stepSize'])
     # todo пересчитывать мин ордер для каждой пары USDT / BTC
     if asset == "BTC":
         price_btc = await get_btc_price(client)
-        quantity = min_order / price_btc / price
+        quantity = round_step_size(min_order / price_btc / price, step_size)
     else:
-        quantity = min_order / price
+        quantity = round_step_size(min_order / price, step_size)
     logger.info("{} price:{} qty:{}", pair, price, quantity)
-    if not debug:
-        await client.order_market_buy(symbol=pair, quantity=quantity)
-    save_order(database, pair, data)
+
+
+    await client.order_market_buy(symbol=pair, quantity=quantity)
+    insert_order(database, pair, data, step_size)
+    delete_pair_price(database, pair)
 
 
 @logger.catch
-def save_order(database, pair, data):
+def insert_order(database, pair, data, step_size):
     """
     Сохраняет сделку в базе данных.
     :param database:
     :param pair:
     :param data:
     :return:
+
     """
     # logger.info("start")
     price = get_price(data, pair)
-    quantity = min_order / price
+    quantity = round_step_size(min_order / price, step_size)
+
     for item in data:
         if item["s"] == pair:
-            result = {'E': item["E"],
-                      's': item["s"],
-                      'P': item["P"],
-                      'c': item["c"],
-                      'q': quantity,
-                      'S': 'BUY',
-                      'u': time.time(),
-                      'max': 0
+            result = {'time': item["E"],
+                      'pair': item["s"],
+                      'buy_price': item['c'],
+                      'daily_percent': item["P"],
+                      'cur_price': item["c"],
+                      'quantity': quantity,
+                      'status': 'BUY',
+                      'update': time.time(),
+                      'max_price': item["c"],
+                      'min_price': item["c"]
                       }
+    logger.info("{}", result)
     database.orders.insert_one(result)
     # logger.info("stop")
 
@@ -252,7 +288,7 @@ def save_order(database, pair, data):
 @logger.catch
 def close_order(database, data):
     current = {'_id': data["_id"]}
-    new_data = {"$set": {"S": "SELL", "u": time.time()}}
+    new_data = {"$set": {"status": "SELL", "update": time.time()}}
     logger.info("{}", new_data)
     database.orders.update_one(current, new_data)
 
@@ -260,50 +296,49 @@ def close_order(database, data):
 @logger.catch
 async def sell_pair(database, client, data):
     logger.info("{}", data)
-    quantity = float(round(data["q"], 6))
-    symbol = data["s"]
-    if not debug:
-        await client.order_market_sell(symbol=symbol, quantity=quantity)
+    quantity = data['quantity']
+    symbol = data["pair"]
+    await client.order_market_sell(symbol=symbol, quantity=quantity)
     close_order(database, data)
 
 
 @logger.catch
 def save_max_price(database, max_price, data):
     current = {'_id': data["_id"]}
-    new_data = {"$set": {"max": max_price}}
+    new_data = {"$set": {"max_price": max_price}}
     logger.warning("Update MAX Price {}", new_data)
     database.orders.update_one(current, new_data)
 
 
 @logger.catch
 def save_min_price(database, item):
-    logger.info("insert {}", item)
     result = {
-        "E": item["E"],
-        "s": item["s"],
-        "P": item["P"],
-        "c": item["c"],
-        "min": item["c"]
+        'time': item['E'],
+        'pair': item['s'],
+        'daily_percent': item['P'],
+        'cur_price': item['c'],
+        'min_price': item['c'],
+        'max_price': 0
     }
+    # logger.info("insert {}", result)
     database.prices.insert_one(result)
-
-
 
 
 @logger.catch
 def get_min_price(database, item):
-    found_pair = database.prices.find_one({'s': item["s"]})
+    found_pair = database.prices.find_one({'pair': item["s"]})
     if found_pair is None:
-        return None
+        save_min_price(database, item)
+        return float(item['c'])
     else:
-        return float(found_pair["min"])
+        return float(found_pair["min_price"])
 
 
 @logger.catch
 def update_min_price(database, item, cur_price):
-    current = {'s': item["s"]}
-    new_data = {"$set": {"min": cur_price}}
-    logger.info("Update item {} for {}", item, new_data)
+    current = {'pair': item["s"]}
+    new_data = {"$set": {"min_price": cur_price}}
+    # logger.info("Update item {} for {}", item, new_data)
     res = database.prices.update_one(current, new_data)
 
 
@@ -318,7 +353,7 @@ def trim_data(res):
 
 
 def delete_pair_price(database, pair):
-    database.prices.delete_one({'s': pair})
+    database.prices.delete_one({'pair': pair})
 
 
 async def on_trade(client, database, data, symbols):
@@ -329,28 +364,40 @@ async def on_trade(client, database, data, symbols):
     :param data:
     :param symbols:
     :return:
+    order_data =
+    {'_id': ObjectId('624715a06be72a423f00c1d2'),
+    'time': 1648825758537,
+    'pair': 'AMPUSDT',
+    'buy_price': '0.02763000',
+    'daily_percent': '-1.603',
+    'cur_price': '0.02763000',
+    'quantity': 361.92544335866813,
+    'status': 'BUY',
+    'update': 1648825760.4829183,
+    'max_price': 0,
+    'min_price': 0
+    }
     """
-    logger.info("on trade start")
     for pair in symbols:
         item = get_pair_data(data, pair)
         if item is not None:
             order_data = get_orders(pair)
             if order_data:
                 cur_price = float(item["c"])
-                buy_price = float(order_data["c"])
+                buy_price = float(order_data["buy_price"])
                 cur_percent = (cur_price - buy_price) / cur_price * 100
                 if cur_percent <= stop_loss:
                     logger.warning("Sell stop-loss {} Buy:{} Sell:{}", item["s"], buy_price, cur_price)
                     await sell_pair(database, client, order_data)
-                elif cur_percent >= sell_up or order_data["max"] > 0:
-                    max_price = float(order_data["max"])
+                elif cur_percent >= sell_up: #не ясно зачем и что тут делается
+                    max_price = float(order_data["max_price"])
                     if max_price == 0:
                         max_price = buy_price
                         save_max_price(database, max_price, order_data)
                     elif max_price < buy_price:
                         max_price = buy_price
                         save_max_price(database, max_price, order_data)
-                    elif (max_price - buy_price)/max_price*100 > trailing_sell or cur_percent <= sell_up:
+                    elif (max_price - cur_price)/max_price*100 > trailing_sell or cur_percent <= sell_up:
                         logger.warning("Sell {} Buy:{} Sell:{} %:{}",
                                        item["s"],
                                        buy_price,
@@ -359,22 +406,22 @@ async def on_trade(client, database, data, symbols):
                         await sell_pair(database, client, order_data)
 
             else:
-                if float(item["P"]) < daily_percent:
+
+                cur_percent = float(item["P"])
+                if cur_percent < daily_percent:
                     cur_price = float(item["c"])
                     min_price = get_min_price(db, item)
-                    if min_price is None:
-                        save_min_price(db, item)
-                        min_price = cur_price
                     buy_percent = (cur_price - min_price) / cur_price * 100
-                    order_count = database.orders.count_documents({'S': 'BUY'})
+                    order_count = database.orders.count_documents({'status': 'BUY'})
                     if cur_price < min_price:
+
                         update_min_price(db, item, cur_price)
                     elif buy_percent > 2:
+                        logger.info("buy_percent {} > 2", buy_percent)
                         if order_count < max_trade_pair:
                             await buy_pair(database, client, pair, data)
                         else:
                             delete_pair_price(database, pair)
-    await asyncio.sleep(0)
 
 
 @logger.catch
@@ -387,15 +434,15 @@ async def main(database, symbols):
     """
     client = await AsyncClient.create(api_key, api_secret)
     bm = BinanceSocketManager(client)
-    # start any sockets here, i.e a trade socket
+
     ts = bm.multiplex_socket(['!ticker@arr'])
-    # then start receiving messages
+
     async with ts as tscm:
         while True:
             res = await tscm.recv()
             data = trim_data(res)
-            # logger.info(data)
-            on_calculate(data, symbols)
+
+            await on_calculate(client, data, symbols)
             await on_trade(client, database, data, symbols)
     await client.close_connection()
 
