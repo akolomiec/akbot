@@ -3,14 +3,55 @@ import akbot
 import order
 import os
 from unittest import IsolatedAsyncioTestCase
-
-import order
+from binance import AsyncClient
 
 
 class Test(IsolatedAsyncioTestCase):
 
-    async def test_on_calculate(self):
-        pass
+    async def test_get_btc_price_dict(self):
+        self.api_key = os.getenv('API_KEY')
+        self.api_secret = os.getenv('API_SECRET')
+        client = await AsyncClient.create(self.api_key, self.api_secret)
+        btcusdt = "BTCUSDT"
+        btc = await client.get_ticker(symbol=btcusdt)
+        await client.close_connection()
+        self.assertEqual(dict, type(btc))
+
+    async def test_get_btc_price_greater_null(self):
+        self.api_key = os.getenv('API_KEY')
+        self.api_secret = os.getenv('API_SECRET')
+        client = await AsyncClient.create(self.api_key, self.api_secret)
+        btcusdt = "BTCUSDT"
+        btc = await client.get_ticker(symbol=btcusdt)
+        await client.close_connection()
+        self.assertGreater(float(btc["lastPrice"]), 0)
+
+
+    async def test_calculate_quantity_btc(self):
+        self.api_key = os.getenv('API_KEY')
+        self.api_secret = os.getenv('API_SECRET')
+        client = await AsyncClient.create(self.api_key, self.api_secret)
+        asset = "BTC"
+        min_order = 11
+        cur_price = 0.0006821
+        step_size = 0.01
+        trader = akbot.Trader()
+        quantity = await trader.calculate_quantity(client, asset, min_order, cur_price, step_size)
+        await client.close_connection()
+        self.assertEqual(0.37, quantity)
+
+    async def test_calculate_quantity_usdt(self):
+        self.api_key = os.getenv('API_KEY')
+        self.api_secret = os.getenv('API_SECRET')
+        client = await AsyncClient.create(self.api_key, self.api_secret)
+        asset = "USDT"
+        min_order = 11
+        cur_price = 0.00002504
+        step_size = 1
+        trader = akbot.Trader()
+        quantity = await trader.calculate_quantity(client, asset, min_order, cur_price, step_size)
+        await client.close_connection()
+        self.assertEqual(439297.0, quantity)
 
 
 class TraderTestCase(unittest.TestCase):
@@ -22,17 +63,7 @@ class TraderTestCase(unittest.TestCase):
         list_result = trader.get_whitelist()
         self.assertEqual(list_etalon, list_result)
 
-    def test_get_whitelist_file_not_found(self):
-        trader = akbot01.Trader()
-        trader.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\w.txt"
-        with self.assertRaises(FileNotFoundError) as cm:
-            trader.get_whitelist()
-        the_exception = cm.exception
-        self.assertEqual(the_exception.strerror, 'No such file or directory')
-        self.assertEqual(the_exception.errno, 2)
-
     def test_set_whitelist(self):
-
         list_etalon = ['AXS', 'BAT', 'BCD', 'BCH', 'BICO', 'BNB', 'BTCST', 'BTG', 'CAKE', 'CELO']
         trader = akbot.Trader()
         trader.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\whitelist2.txt"
@@ -123,6 +154,8 @@ class TraderTestCase(unittest.TestCase):
         step_size = 1
         o = order.Order('SHIBUSDT', -5, 0.00002465)
         self.assertEqual(32, o.trim_step_size(quantity, step_size))
+
+
 
 
 if __name__ == '__main__':

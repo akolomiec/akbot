@@ -125,14 +125,14 @@ class Trader:
             self.make_pairs()
             return self.pairs
 
-    async def get_btc_price(self):
+    async def get_btc_price(self, client):
         """
             Получаем цену биткоина к доллару.
             :param
             :return:
             """
-        btc = await self.client.get_ticker(symbol="BTCUSDT")
-        await self.client.close_connection()
+        btc = await client.get_ticker(symbol="BTCUSDT")
+        await client.close_connection()
         return float(btc["lastPrice"])
 
     def get_binance_status(self):
@@ -214,14 +214,8 @@ class Trader:
                                     info = await self.client.get_symbol_info(self.pair)
                                     logger.warning(info)
                                     order_item.step_size = float(info['filters'][2]['stepSize'])
-
-                                if asset == "BTC":
-                                    price_btc = await self.get_btc_price()
-                                    order_item.quantity = round_step_size(self.min_order / price_btc / order_item.cur_price,
-                                                                          order_item.step_size)
-                                else:
-                                    order_item.quantity = round_step_size(self.min_order / order_item.cur_price,
-                                                                          order_item.step_size)
+                                    order_item.quantity = await self.calculate_quantity(asset, self.client, self.min_order, order_item.cur_price,
+                                                                                  order_item.step_size)
                                 logger.info("{} price:{} qty:{}", order_item.pair, order_item.cur_price,
                                             order_item.quantity)
                                 await order_item.buy_pair(self.client)
@@ -230,6 +224,16 @@ class Trader:
                             await order_item.sell_pair(self.client)
                             self.trade_order -= 1
 
+    async def calculate_quantity(self, client, asset, min_order, cur_price, step_size):
+        if min_order > 10.5:
+            if asset == "BTC":
+                price_btc = await self.get_btc_price(client)
+                quantity = round_step_size(min_order / price_btc / cur_price, step_size)
+            else:
+                quantity = round_step_size(min_order / cur_price, step_size)
+        else:
+            return None
+        return quantity
 
     def get_asset(self, pair):
         """
