@@ -5,53 +5,59 @@ import os
 from unittest import IsolatedAsyncioTestCase
 from binance import AsyncClient
 
+events = []
+
 
 class Test(IsolatedAsyncioTestCase):
 
-    async def test_get_btc_price_dict(self):
+    def setUp(self):
+        events.append("setUp")
+
+    async def asyncSetUp(self):
         self.api_key = os.getenv('API_KEY')
         self.api_secret = os.getenv('API_SECRET')
-        client = await AsyncClient.create(self.api_key, self.api_secret)
+        self.client = await AsyncClient.create(self.api_key, self.api_secret)
+        self.trader = akbot.Trader()
+
+        events.append("asyncSetUp")
+
+    async def test_get_btc_price_dict(self):
+        events.append("test_get_btc_price_dict")
         btcusdt = "BTCUSDT"
-        btc = await client.get_ticker(symbol=btcusdt)
-        await client.close_connection()
+        btc = await self.client.get_ticker(symbol=btcusdt)
         self.assertEqual(dict, type(btc))
 
     async def test_get_btc_price_greater_null(self):
-        self.api_key = os.getenv('API_KEY')
-        self.api_secret = os.getenv('API_SECRET')
-        client = await AsyncClient.create(self.api_key, self.api_secret)
+        events.append("test_get_btc_price_greater_null")
         btcusdt = "BTCUSDT"
-        btc = await client.get_ticker(symbol=btcusdt)
-        await client.close_connection()
+        btc = await self.client.get_ticker(symbol=btcusdt)
         self.assertGreater(float(btc["lastPrice"]), 0)
 
 
     async def test_calculate_quantity_btc(self):
-        self.api_key = os.getenv('API_KEY')
-        self.api_secret = os.getenv('API_SECRET')
-        client = await AsyncClient.create(self.api_key, self.api_secret)
+        events.append("test_calculate_quantity_btc")
         asset = "BTC"
         min_order = 11
         cur_price = 0.0006821
         step_size = 0.01
-        trader = akbot.Trader()
-        quantity = await trader.calculate_quantity(client, asset, min_order, cur_price, step_size)
-        await client.close_connection()
+        quantity = await self.trader.calculate_quantity(self.client, asset, min_order, cur_price, step_size)
         self.assertEqual(0.37, quantity)
 
     async def test_calculate_quantity_usdt(self):
-        self.api_key = os.getenv('API_KEY')
-        self.api_secret = os.getenv('API_SECRET')
-        client = await AsyncClient.create(self.api_key, self.api_secret)
+        events.append("test_calculate_quantity_btc")
         asset = "USDT"
         min_order = 11
         cur_price = 0.00002504
         step_size = 1
-        trader = akbot.Trader()
-        quantity = await trader.calculate_quantity(client, asset, min_order, cur_price, step_size)
-        await client.close_connection()
+        quantity = await self.trader.calculate_quantity(self.client, asset, min_order, cur_price, step_size)
         self.assertEqual(439297.0, quantity)
+
+    def tearDown(self):
+        events.append("tearDown")
+
+    async def asyncTearDown(self):
+        await self.client.close_connection()
+        events.append("asyncTearDown")
 
 
 class TraderTestCase(unittest.TestCase):
@@ -154,8 +160,6 @@ class TraderTestCase(unittest.TestCase):
         step_size = 1
         o = order.Order('SHIBUSDT', -5, 0.00002465)
         self.assertEqual(32, o.trim_step_size(quantity, step_size))
-
-
 
 
 if __name__ == '__main__':
