@@ -1,10 +1,10 @@
 import unittest
-import akbot01
-import order01
+import akbot
+import order
 import os
 from unittest import IsolatedAsyncioTestCase
 
-import order01
+import order
 
 
 class Test(IsolatedAsyncioTestCase):
