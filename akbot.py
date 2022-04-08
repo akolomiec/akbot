@@ -192,7 +192,7 @@ class Trader:
                                 order_item.max_price = order_item.cur_price
                             if order_item.max_price < order_item.cur_price:
                                 order_item.max_price = order_item.cur_price
-                            elif order_item.cur_price / order_item.buy_price * 100 - 100 < self.sell_up:
+                            elif order_item.cur_price / order_item.buy_price * 100 - 100 < self.sell_up-0.5:
                                 order_item.flag = "sell"
                             elif order_item.cur_price / order_item.max_price * 100 - 100 < self.trailing_sell:
                                 order_item.flag = "sell"
@@ -214,7 +214,7 @@ class Trader:
                                     info = await self.client.get_symbol_info(self.pair)
                                     logger.warning(info)
                                     order_item.step_size = float(info['filters'][2]['stepSize'])
-                                    order_item.quantity = await self.calculate_quantity(asset, self.client, self.min_order, order_item.cur_price,
+                                order_item.quantity = await self.calculate_quantity(asset, self.client, self.min_order, order_item.cur_price,
                                                                                   order_item.step_size)
                                 logger.info("{} price:{} qty:{}", order_item.pair, order_item.cur_price,
                                             order_item.quantity)
