@@ -304,7 +304,7 @@ async def sell_pair(database, client, data):
 
 @logger.catch
 def save_max_price(database, max_price, data):
-    current = {'_id': data["_id"]}
+    current = {'pair': data["pair"]}
     new_data = {"$set": {"max_price": max_price}}
     logger.warning("Update MAX Price {}", new_data)
     database.orders.update_one(current, new_data)
@@ -390,20 +390,7 @@ async def on_trade(client, database, data, symbols):
                     logger.warning("Sell stop-loss {} Buy:{} Sell:{}", item["s"], buy_price, cur_price)
                     await sell_pair(database, client, order_data)
                 elif cur_percent >= sell_up: #не ясно зачем и что тут делается
-                    max_price = float(order_data["max_price"])
-                    if max_price == 0:
-                        max_price = buy_price
-                        save_max_price(database, max_price, order_data)
-                    elif max_price < buy_price:
-                        max_price = buy_price
-                        save_max_price(database, max_price, order_data)
-                    elif (max_price - cur_price)/max_price*100 > trailing_sell or cur_percent <= sell_up:
-                        logger.warning("Sell {} Buy:{} Sell:{} %:{}",
-                                       item["s"],
-                                       buy_price,
-                                       cur_price,
-                                       (cur_price - buy_price)/cur_price*100)
-                        await sell_pair(database, client, order_data)
+                    await sell_pair(database, client, order_data)
 
             else:
 
