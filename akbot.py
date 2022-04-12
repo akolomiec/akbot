@@ -29,9 +29,9 @@ class Trader:
         self.api_secret = os.getenv('API_SECRET')
         self.min_order = 50
         self.max_trade_pair = 5
-        self.daily_percent = -5
+        self.daily_percent = -1
         self.trailing_stop = True
-        self.sell_up = 1.5
+        self.sell_up = 1.2
         self.stop_loss = -1
         self.trailing_sell = 1
         self.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\whitelist.txt"
@@ -138,7 +138,7 @@ class Trader:
     def get_binance_status(self):
         pass
 
-    def get_pair_data(self):
+    def get_pair_data(self, pair):
         """
         Извлекает из общей кучи данные по заданной паре
         :param
@@ -146,64 +146,55 @@ class Trader:
         :return:
         """
         for item in self.tickerarr:
-            if self.pair == item["s"]:
+            if pair == item["s"]:
                 return item
 
     @logger.catch
-    async def on_calculate(self):
-        for self.pair in self.pairs:
-            item = self.get_pair_data()
+    async def on_calculate(self, pairs, orders):
+        for pair in pairs:
+            item = self.get_pair_data(pair)
             if item is not None:
                 found_order = False
-                for order_item in self.orders:
-                    if order_item.pair == self.pair:
+                for order_item in orders:
+                    if order_item.pair == pair:
                         found_order = True
                         order_item.cur_price = float(item['c'])
                         order_item.daily_percent = float(item['P'])
 
                         if order_item.stage == "pre":
                             if order_item.min_price is None:
-                                order_item.min_price = float(item['c'])
-                            if order_item.min_price > float(item['c']):
-                                order_item.min_price = float(item['c'])
+                                order_item.min_price = order_item.cur_price
+                            if order_item.min_price > order_item.cur_price:
+                                order_item.min_price = order_item.cur_price
                             else:
                                 percent = (order_item.cur_price - order_item.min_price) / order_item.cur_price * 100
                                 if percent > 2:
                                     order_item.flag = "buy"
+                                    return order_item.flag
 
                         elif order_item.stage == "sell_up":
-                            logger.debug("{} buy:{} cur:{} qty:{} max:{} min:{}", order_item.pair, order_item.buy_price,
+                            logger.debug("{} buy:{} cur:{} qty:{} max:{} min:{} %:{}", order_item.pair, order_item.buy_price,
                                          order_item.cur_price, order_item.quantity, order_item.max_price,
-                                         order_item.min_price)
+                                         order_item.min_price, (order_item.cur_price - order_item.buy_price) / order_item.cur_price * 100)
                             if order_item.max_price is None:
                                 order_item.max_price = order_item.cur_price
                             if order_item.max_price < order_item.cur_price:
                                 order_item.max_price = order_item.cur_price
                             if order_item.cur_price / order_item.buy_price * 100 - 100 < self.stop_loss:
                                 order_item.flag = "sell"
-                            elif order_item.cur_price / order_item.buy_price * 100 - 100 > self.sell_up:
-                                order_item.stage = "trailing"
-
-                        elif order_item.stage == "trailing":
-                            logger.debug("{} buy:{} cur:{} qty:{} max:{} min:{} %:{}", order_item.pair, order_item.buy_price,
-                                         order_item.cur_price, order_item.quantity, order_item.max_price,
-                                         order_item.min_price, (order_item.cur_price / order_item.buy_price * 100 - 100))
-                            if order_item.max_price is None:
-                                order_item.max_price = order_item.cur_price
-                            if order_item.max_price < order_item.cur_price:
-                                order_item.max_price = order_item.cur_price
-                            elif order_item.cur_price / order_item.buy_price * 100 - 100 < self.sell_up-0.5:
+                                return order_item.flag
+                            if order_item.cur_price / order_item.buy_price * 100 - 100 > self.sell_up:
                                 order_item.flag = "sell"
-                            elif order_item.cur_price / order_item.max_price * 100 - 100 < self.trailing_sell:
-                                order_item.flag = "sell"
+                                return order_item.flag
 
                 if not found_order:
-                    self.orders.append(order.Order(self.pair, float(item['P']), float(item['c'])))
+                    self.orders.append(order.Order(pair, float(item['P']), float(item['c'])))
+                    return None
 
     @logger.catch
     async def on_trade(self):
         for self.pair in self.pairs:
-            item = self.get_pair_data()
+            item = self.get_pair_data(self.pair)
             if item is not None:
                 for order_item in self.orders:
                     if order_item.pair == self.pair:
@@ -262,7 +253,7 @@ class Trader:
                 res = await tscm.recv()
                 self.tickerarr = trim_data(res)
 
-                await self.on_calculate()
+                await self.on_calculate(self.pairs, self.orders)
                 await self.on_trade()
 
 

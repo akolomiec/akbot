@@ -69,7 +69,7 @@ class Order:
                        self.sell_price)
         await client.order_market_sell(symbol=self.pair, quantity=self.quantity)
         self.sell_price = self.cur_price
-        self.status = "sell"
+        self.status = "None"
         self.flag = None
         self.stage = "pre"
         self.buy_price = None

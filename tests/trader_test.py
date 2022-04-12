@@ -41,7 +41,7 @@ class Test(IsolatedAsyncioTestCase):
         cur_price = 0.0006821
         step_size = 0.01
         quantity = await self.trader.calculate_quantity(self.client, asset, min_order, cur_price, step_size)
-        self.assertEqual(0.37, quantity)
+        self.assertEqual(0.39, quantity)
 
     async def test_calculate_quantity_usdt(self):
         events.append("test_calculate_quantity_btc")
@@ -51,6 +51,9 @@ class Test(IsolatedAsyncioTestCase):
         step_size = 1
         quantity = await self.trader.calculate_quantity(self.client, asset, min_order, cur_price, step_size)
         self.assertEqual(439297.0, quantity)
+
+    async def test_on_calculate_on_pre_buy(self):
+        self.assertEqual('buy', self.trader.on_calculate(pairs, orders))
 
     def tearDown(self):
         events.append("tearDown")
