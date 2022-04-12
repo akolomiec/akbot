@@ -7,7 +7,7 @@ from binance.helpers import round_step_size
 
 import order
 
-
+#todo перенести этот кусок в класс Formater
 def trim_data(res):
     dict_res = []
     data = res["data"]
@@ -243,10 +243,13 @@ class Trader:
 
     @logger.catch
     async def main(self):
+        #todo убрать подготовку соединений в соответствующие классы.
         self.client = await AsyncClient.create(self.api_key, self.api_secret)
         bm = BinanceSocketManager(self.client)
 
+        #todo убрать получение данных в отдельный метод класса Binancer
         ts = bm.multiplex_socket(['!ticker@arr'])
+
 
         async with ts as tscm:
             while True:
