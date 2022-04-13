@@ -255,17 +255,14 @@ class Trader:
         
         self.symbols = trader.get_whitelist(self.whitelist_filename)
         self.asset = trader.get_assets(self.assets_filename)
-        # todo убрать подготовку соединений в соответствующие классы.
         self.client = await AsyncClient.create(self.api_key, self.api_secret)
         self.bm = BinanceSocketManager(self.client)
-
-        # todo убрать получение данных в отдельный метод класса Binancer
         ts = self.bm.multiplex_socket(['!ticker@arr'])
 
         async with ts as tscm:
             while True:
                 self.binance_response = await tscm.recv()
-                await self.on_calculate(self.symbols, self. assets, self.orders, res)
+                await self.on_calculate(self.symbols, self. assets, self.orders, self.binance_response)
                 await self.on_trade()
 
 
