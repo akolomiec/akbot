@@ -5,16 +5,10 @@ from loguru import logger
 from binance import AsyncClient, BinanceSocketManager
 from binance.helpers import round_step_size
 
+
 import order
 
-#todo перенести этот кусок в класс Formater
-def trim_data(res):
-    dict_res = []
-    data = res["data"]
-    for item in data:
-        result = {'E': item["E"], 's': item["s"], 'P': item["P"], 'c': item["c"]}
-        dict_res.append(result)
-    return dict_res
+
 
 
 class Trader:
@@ -23,6 +17,10 @@ class Trader:
     """
 
     def __init__(self):
+        self.binance_response = None
+        self.asset = None
+        self.symbols = None
+        self.client = None
         self.pair = None
         self.tickerarr = None
         self.api_key = os.getenv('API_KEY')
@@ -35,37 +33,42 @@ class Trader:
         self.stop_loss = -1
         self.trailing_sell = 1
         self.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\whitelist.txt"
-        self.whitelist = self.get_whitelist()
+        self.whitelist = self.get_whitelist(self.whitelist_filename)
         self.assets_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\assets.txt"
-        self.assets = self.get_assets()
+        self.assets = self.get_assets(self.assets_filename)
         self.pairs = self.make_pairs()
         self.orders = []
         self.trade_order = 0
 
-    def get_whitelist(self):
+    @classmethod
+    def get_whitelist(cls, whitelist_filename: str):
         """
             Получить список валют из файла для торговли
-            :return: список валют разделенные пробелами
+            :param whitelist_filename: str Имя файла для белого списка валют
+            :return: list список валют разделенные пробелами
             """
         whitelist_result = []
-        f = open(self.whitelist_filename, 'r')
+        f = open(whitelist_filename, 'r')
         try:
             whitelist = f.read()
             whitelist_result = whitelist.split()
-            self.whitelist = whitelist_result
+            cls.whitelist = whitelist_result
         except FileNotFoundError as e:
-            logger.exception("{} file {}", e.strerror, self.whitelist_filename)
+            logger.exception("{} file {}", e.strerror, whitelist_filename)
         finally:
             f.close()
         return whitelist_result
 
-    def set_whitelist(self, whitelist):
+    @classmethod
+    def set_whitelist(cls, whitelist, whitelist_filename):
         """
-            Сохраним белый список валют в файл
-            :param whitelist: список валют разделенных пробелом
-            :return: Ничто
-            """
-        f = open(self.whitelist_filename, 'w')
+        Сохраним белый список валют в файл
+            :param whitelist: str список валют разделенных пробелом
+            :param whitelist_filename: str
+            :return: bool
+        """
+
+        f = open(whitelist_filename, 'w')
         try:
             f.write(whitelist.upper())
         except FileExistsError:
@@ -74,30 +77,32 @@ class Trader:
             f.close()
         return True
 
-    def get_assets(self):
+    @classmethod
+    def get_assets(cls, assets_filename):
         """
             Получаем базовые активы к которым торгуются валюты из Whitelist
             :return: Список базовых валют разделенных пробелом.
             """
         lst = ""
-        f = open(self.assets_filename, 'r')
+        f = open(assets_filename, 'r')
         try:
             assets = f.read()
             lst = assets.split()
-            self.assets = lst
+            cls.assets = lst
         except FileExistsError:
             logger.exception("Can not reding tha file assets.txt")
         finally:
             f.close()
         return lst
 
-    def set_assets(self, assets):
+    @classmethod
+    def set_assets(cls, assets, assets_filename):
         """
         Сохранение базовых валют в файл
         :param assets: Список базовых валют для сохранения
         :return: None
         """
-        f = open(self.assets_filename, 'w')
+        f = open(assets_filename, 'w')
         try:
             f.write(assets.upper())
         finally:
@@ -173,9 +178,11 @@ class Trader:
                                     return order_item.flag
 
                         elif order_item.stage == "sell_up":
-                            logger.debug("{} buy:{} cur:{} qty:{} max:{} min:{} %:{}", order_item.pair, order_item.buy_price,
+                            logger.debug("{} buy:{} cur:{} qty:{} max:{} min:{} %:{}", order_item.pair,
+                                         order_item.buy_price,
                                          order_item.cur_price, order_item.quantity, order_item.max_price,
-                                         order_item.min_price, (order_item.cur_price - order_item.buy_price) / order_item.cur_price * 100)
+                                         order_item.min_price,
+                                         (order_item.cur_price - order_item.buy_price) / order_item.cur_price * 100)
                             if order_item.max_price is None:
                                 order_item.max_price = order_item.cur_price
                             if order_item.max_price < order_item.cur_price:
@@ -200,13 +207,14 @@ class Trader:
                     if order_item.pair == self.pair:
                         if order_item.flag == "buy":
                             if self.max_trade_pair > self.trade_order:
-                                asset = self.get_asset(self.pair)
+                                asset = trader.get_asset(self.pair)
                                 if order_item.step_size is None:
                                     info = await self.client.get_symbol_info(self.pair)
                                     logger.warning(info)
                                     order_item.step_size = float(info['filters'][2]['stepSize'])
-                                order_item.quantity = await self.calculate_quantity(asset, self.client, self.min_order, order_item.cur_price,
-                                                                                  order_item.step_size)
+                                order_item.quantity = await self.calculate_quantity(asset, self.client, self.min_order,
+                                                                                    order_item.cur_price,
+                                                                                    order_item.step_size)
                                 logger.info("{} price:{} qty:{}", order_item.pair, order_item.cur_price,
                                             order_item.quantity)
                                 await order_item.buy_pair(self.client)
@@ -226,7 +234,8 @@ class Trader:
             return None
         return quantity
 
-    def get_asset(self, pair):
+    @staticmethod
+    def get_asset(pair):
         """
         Возвращаем базовый актив, BTC или USDT
         :param pair:
@@ -243,20 +252,20 @@ class Trader:
 
     @logger.catch
     async def main(self):
-        #todo убрать подготовку соединений в соответствующие классы.
+        
+        self.symbols = trader.get_whitelist(self.whitelist_filename)
+        self.asset = trader.get_assets(self.assets_filename)
+        # todo убрать подготовку соединений в соответствующие классы.
         self.client = await AsyncClient.create(self.api_key, self.api_secret)
-        bm = BinanceSocketManager(self.client)
+        self.bm = BinanceSocketManager(self.client)
 
-        #todo убрать получение данных в отдельный метод класса Binancer
-        ts = bm.multiplex_socket(['!ticker@arr'])
-
+        # todo убрать получение данных в отдельный метод класса Binancer
+        ts = self.bm.multiplex_socket(['!ticker@arr'])
 
         async with ts as tscm:
             while True:
-                res = await tscm.recv()
-                self.tickerarr = trim_data(res)
-
-                await self.on_calculate(self.pairs, self.orders)
+                self.binance_response = await tscm.recv()
+                await self.on_calculate(self.symbols, self. assets, self.orders, res)
                 await self.on_trade()
 
 

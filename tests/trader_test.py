@@ -1,5 +1,7 @@
 import unittest
+
 import akbot
+import akbot as Trader
 import order
 import os
 from unittest import IsolatedAsyncioTestCase
@@ -52,9 +54,6 @@ class Test(IsolatedAsyncioTestCase):
         quantity = await self.trader.calculate_quantity(self.client, asset, min_order, cur_price, step_size)
         self.assertEqual(439297.0, quantity)
 
-    async def test_on_calculate_on_pre_buy(self):
-        self.assertEqual('buy', self.trader.on_calculate(pairs, orders))
-
     def tearDown(self):
         events.append("tearDown")
 
@@ -66,45 +65,40 @@ class Test(IsolatedAsyncioTestCase):
 class TraderTestCase(unittest.TestCase):
     def test_get_whitelist(self):
         list_etalon = ["1INCH", "AAVE", "ADA"]
-
-        trader = akbot.Trader()
-        trader.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\whitelist.txt"
-        list_result = trader.get_whitelist()
+        whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\whitelist.txt"
+        list_result = akbot.Trader.get_whitelist(whitelist_filename)
         self.assertEqual(list_etalon, list_result)
 
     def test_set_whitelist(self):
         list_etalon = ['AXS', 'BAT', 'BCD', 'BCH', 'BICO', 'BNB', 'BTCST', 'BTG', 'CAKE', 'CELO']
-        trader = akbot.Trader()
-        trader.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\whitelist2.txt"
+
+        whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\whitelist2.txt"
         whitelist = "AXS BAT BCD BCH BICO BNB BTCST BTG CAKE CELO"
-        trader.set_whitelist(whitelist=whitelist)
-        list_result = trader.get_whitelist()
+        akbot.Trader.set_whitelist(whitelist=whitelist, whitelist_filename=whitelist_filename)
+        list_result = akbot.Trader.get_whitelist(whitelist_filename=whitelist_filename)
         self.assertEqual(list_etalon, list_result)
 
     def test_get_whitelist_file_not_found(self):
-        trader = akbot.Trader()
-        trader.whitelist_filename = "E:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\w.txt"
+        whitelist_filename = "E:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\w.txt"
         whitelist = "AXS BAT BCD BCH BICO BNB BTCST BTG CAKE CELO"
         with self.assertRaises(FileNotFoundError) as cm:
-            trader.set_whitelist(whitelist=whitelist)
+            akbot.Trader.set_whitelist(whitelist=whitelist, whitelist_filename=whitelist_filename)
         the_exception = cm.exception
         self.assertEqual(the_exception.strerror, 'No such file or directory')
         self.assertEqual(the_exception.errno, 2)
 
     def test_get_assets(self):
         list_etalon = ['USDT']
-        trader = akbot.Trader()
-        trader.assets_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\assets_test.txt"
-        list_result = trader.get_assets()
+        assets_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\assets_test.txt"
+        list_result = akbot.Trader.get_assets(assets_filename=assets_filename)
         self.assertEqual(list_etalon, list_result)
 
     def test_set_assets(self):
         list_etalon = ['USDT', 'BTC']
-        trader = akbot.Trader()
-        trader.assets_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\assets_test2.txt"
+        assets_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\tests\\assets_test2.txt"
         assets = "USDT BTC"
-        trader.set_assets(assets=assets)
-        list_result = trader.get_assets()
+        akbot.Trader.set_assets(assets=assets, assets_filename=assets_filename)
+        list_result = akbot.Trader.get_assets(assets_filename=assets_filename)
         self.assertEqual(list_etalon, list_result)
 
     def test_make_pair(self):
@@ -132,36 +126,36 @@ class TraderTestCase(unittest.TestCase):
 
     def test_get_asset_4(self):
         pair = 'SHIBUSDT'
-        o = order.Order(pair, -5, 0.00002465)
+        o = order.Order(symbol='SHIB', asset='USDT', daily_percent=-5, cur_price=0.00002465)
         self.assertEqual('SHIB', o.get_asset(pair))
 
     def test_get_asset_3(self):
         pair = 'USDTBTC'
-        o = order.Order(pair, -5, 0.00002465)
+        o = order.Order(symbol='USDT', asset='BTC', daily_percent=-5, cur_price=0.00002465)
         self.assertEqual('USDT', o.get_asset(pair))
 
     def test_trim_step_size6(self):
         quantity = 32.156654234
         step_size = 0.000001
-        o = order.Order('SHIBUSDT', -5, 0.00002465)
+        o = order.Order(symbol='SHIB', asset='USDT', daily_percent=-5, cur_price=0.00002465)
         self.assertEqual(32.156654, o.trim_step_size(quantity, step_size))
 
     def test_trim_step_size4(self):
         quantity = 32.156654234
         step_size = 0.0001
-        o = order.Order('SHIBUSDT', -5, 0.00002465)
+        o = order.Order('SHIBUSDT', -5, 0.00002465, cur_price=0.00002462)
         self.assertEqual(32.1566, o.trim_step_size(quantity, step_size))
 
     def test_trim_step_size1(self):
         quantity = 32.156654234
         step_size = 0.1
-        o = order.Order('SHIBUSDT', -5, 0.00002465)
+        o = order.Order(symbol='SHIB', asset='USDT', daily_percent=-5, cur_price=0.00002465)
         self.assertEqual(32.1, o.trim_step_size(quantity, step_size))
 
     def test_trim_step_size0(self):
         quantity = 32.156654234
         step_size = 1
-        o = order.Order('SHIBUSDT', -5, 0.00002465)
+        o = order.Order(symbol = 'SHIB', asset='USDT', daily_percent=-5, cur_price=0.00002465)
         self.assertEqual(32, o.trim_step_size(quantity, step_size))
 
 

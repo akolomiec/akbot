@@ -7,10 +7,11 @@ import decimal
 class Order:
     """Класс торгового ордера."""
 
-    def __init__(self, pair, daily_percent, cur_price):
+    def __init__(self, symbol, asset, daily_percent, cur_price):
         self.flag = None
         self.create_time = time.time()
-        self.pair = pair
+        self.symbol = symbol
+        self.asset = asset
         self.daily_percent = daily_percent
         self.cur_price = cur_price
         self.buy_price = None
