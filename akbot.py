@@ -5,10 +5,8 @@ from loguru import logger
 from binance import AsyncClient, BinanceSocketManager
 from binance.helpers import round_step_size
 
-
+import akbot
 import order
-
-
 
 
 class Trader:
@@ -19,7 +17,7 @@ class Trader:
     def __init__(self):
         self.binance_response = None
         self.asset = None
-        self.symbols = None
+        self.symbol = None
         self.client = None
         self.pair = None
         self.tickerarr = None
@@ -33,15 +31,17 @@ class Trader:
         self.stop_loss = -1
         self.trailing_sell = 1
         self.whitelist_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\whitelist.txt"
-        self.whitelist = self.get_whitelist(self.whitelist_filename)
+        self.whitelist = akbot.Trader.get_whitelist(self.whitelist_filename)
         self.assets_filename = "C:\\Users\\Feliks\\PycharmProjects\\pythonProject\\assets.txt"
-        self.assets = self.get_assets(self.assets_filename)
-        self.pairs = self.make_pairs()
-        self.orders = []
+        self.assets = akbot.Trader.get_assets(self.assets_filename)
+        self.orders = self.init_orders()
         self.trade_order = 0
 
+    def init_orders(self):
+        pass
+
     @classmethod
-    def get_whitelist(cls, whitelist_filename: str):
+    def get_whitelist(cls, whitelist_filename: str) -> list:
         """
             Получить список валют из файла для торговли
             :param whitelist_filename: str Имя файла для белого списка валют
@@ -60,7 +60,7 @@ class Trader:
         return whitelist_result
 
     @classmethod
-    def set_whitelist(cls, whitelist, whitelist_filename):
+    def set_whitelist(cls, whitelist: str, whitelist_filename: str) -> bool:
         """
         Сохраним белый список валют в файл
             :param whitelist: str список валют разделенных пробелом
@@ -252,9 +252,7 @@ class Trader:
 
     @logger.catch
     async def main(self):
-        
-        self.symbols = trader.get_whitelist(self.whitelist_filename)
-        self.asset = trader.get_assets(self.assets_filename)
+
         self.client = await AsyncClient.create(self.api_key, self.api_secret)
         self.bm = BinanceSocketManager(self.client)
         ts = self.bm.multiplex_socket(['!ticker@arr'])
@@ -262,7 +260,7 @@ class Trader:
         async with ts as tscm:
             while True:
                 self.binance_response = await tscm.recv()
-                await self.on_calculate(self.symbols, self. assets, self.orders, self.binance_response)
+                await self.on_calculate(self.symbols, self.assets, self.orders, self.binance_response)
                 await self.on_trade()
 
 
